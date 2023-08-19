@@ -2,36 +2,36 @@ import cv2
 import numpy as np
 import dlib
 from imutils import face_utils
-from flask import Flask,render_template,request
+from flask import Flask, render_template, request
+import threading
+
 app = Flask(__name__)
-cap=None
+cap = None
+stop_thread = False
+drowsiness_thread = None
+
 @app.route('/')
 def index():
-    # return 'Hello world'
     return render_template('index.html')
 
-@app.route('/Drowsiness_Extension')
-def drowsiness():
-    # Initializing the camera and taking the instance
-    global cap
-    cap = cv2.VideoCapture(0)
+def detect_drowsiness():
+    global cap, stop_thread
 
+    # Your drowsiness detection logic...
     # Initializing the face detector and landmark detector
     detector = dlib.get_frontal_face_detector()
     predictor = dlib.shape_predictor("models/shape_predictor_68_face_landmarks.dat")
 
-    # status marking for current state
+    # Drowsiness detection variables
     sleep = 0
     drowsy = 0
     active = 0
     status = ""
     color = (0, 0, 0)
 
-
     def compute(ptA, ptB):
         dist = np.linalg.norm(ptA - ptB)
         return dist
-
 
     def blinked(a, b, c, d, e, f):
         up = compute(b, d) + compute(c, e)
@@ -45,12 +45,14 @@ def drowsiness():
             return 1
         else:
             return 0
-    
-    while True:
+
+    while not stop_thread:
         _, frame = cap.read()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = detector(gray)
         face_frame = frame.copy()
+
+        # Your face detection and drowsiness logic here
         # detected face in faces array
         for face in faces:
             x1 = face.left()
@@ -89,18 +91,44 @@ def drowsiness():
             for n in range(0, 68):
                 (x, y) = landmarks[n]
                 cv2.circle(face_frame, (x, y), 1, (255, 255, 255), -1)
-        cv2.imshow("Frame", frame)
-        cv2.imshow("Result of detector", face_frame)
+        cv2.imshow("Frame", face_frame)
+        cv2.imshow("Result of detector", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+@app.route('/Drowsiness_Extension')
+def drowsiness():
+    global cap, stop_thread, drowsiness_thread
+
+    # Initialize the cap object every time the app is launched
+    cap = cv2.VideoCapture(0)
+
+    stop_thread = False
+    drowsiness_thread = threading.Thread(target=detect_drowsiness)
+    drowsiness_thread.start()
+
+    return render_template('index.html')
 
 
 @app.route('/terminate_App')
 def terminate_app():
-    cap.release()
-    cv2.destroyAllWindows()
-    # return "Flask app is shutting down..."
-    return render_template('index.html')
+    global stop_thread, drowsiness_thread, cap
 
+    stop_thread = True
+    if drowsiness_thread is not None:
+        drowsiness_thread.join()
+
+    if cap is not None:
+        cap.release()
+        cap = None  # Reset the cap object
+
+    return render_template('index.html')
 
 
 if __name__ == "__main__":
     app.run(debug=True)
+# v?BiWqfvx62FNeb
